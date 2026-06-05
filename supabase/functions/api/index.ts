@@ -158,19 +158,37 @@ Deno.serve(async (req) => {
         return error("Method not allowed", 405);
       }
 
-      // POST /api/messages { contact_phone, text?, template?, account_phone? }
+      // POST /api/messages { contact_phone, text?, template?, document?, account_phone? }
       case "messages": {
         if (method === "POST") {
-          const { contact_phone, text, template, account_phone } = body;
+          const { contact_phone, text, template, document, account_phone } = body;
           if (!contact_phone) return error("contact_phone is required");
 
           let content;
           if (template) {
             content = { kind: "template", type: "data", version: "1", data: template };
+          } else if (document) {
+            // Outbound document (e.g. a PDF). `document.link` must be a public https
+            // URL — the dispatcher forwards external URLs to WhatsApp as `link` (no
+            // storage upload). `filename` is shown to the recipient; `caption` is
+            // optional accompanying text. Subject to the same 24h service window as text.
+            if (!document.link) return error("document.link is required");
+            content = {
+              kind: "document",
+              type: "file",
+              version: "1",
+              file: {
+                uri: document.link,
+                name: document.filename,
+                mime_type: document.mime_type ?? "application/pdf",
+                size: 0,
+              },
+              text: document.caption,
+            };
           } else if (text) {
             content = { kind: "text", type: "text", version: "1", text };
           } else {
-            return error("Either text or template is required");
+            return error("One of text, template or document is required");
           }
 
           const result = await tools.sendMessage({
@@ -225,6 +243,7 @@ Deno.serve(async (req) => {
             "GET  /api/contacts?name=...&number=...&limit=10",
             "POST /api/messages { contact_phone, text, account_phone? }",
             "POST /api/messages { contact_phone, template: {...}, account_phone? }",
+            "POST /api/messages { contact_phone, document: { link, filename?, caption?, mime_type? }, account_phone? }",
             "GET  /api/messages?contact_phone=...&limit=50",
             "GET  /api/templates?account_phone=...",
             "GET  /api/templates?template_id=...&account_phone=...",
